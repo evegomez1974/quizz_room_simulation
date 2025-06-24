@@ -1,194 +1,82 @@
 package org.example;
 
-import org.eclipse.paho.client.mqttv3.MqttCallback;
-import org.eclipse.paho.client.mqttv3.MqttException;
-import org.eclipse.paho.client.mqttv3.MqttMessage;
-import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.example.game.*;
+import org.example.mqtt.GameEventListener;
+import org.example.mqtt.MqttClientManager;
+import org.example.model.Buzzer;
+import org.example.util.ConsolePrinter;
 
-import java.util.*;
+import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.locks.ReentrantLock;
-import org.json.JSONObject;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class Main {
-    private static final List<Buzzer> buzzers = new ArrayList<>();
-    private static volatile boolean stopGame = false;
-
-    private static final CountDownLatch startLatch = new CountDownLatch(1);
-    private static CountDownLatch buzzStartLatch = new CountDownLatch(1);
-
-    private static List<Buzzer> buzzOrder = Collections.synchronizedList(new ArrayList<>());
-    private static final ReentrantLock consoleLock = new ReentrantLock();
-    private static Scanner scanner = new Scanner(System.in);
-
-    public static void initBuzzers(ClientMQTT mqtt) throws MqttException {
-        String topic = "init/buzzers";
-        Random random = new Random();
-
-        safePrintln("Tape un nombre de buzzer :");
-        safePrint("> ");
-        int nbBuzzer = Integer.parseInt(scanner.nextLine());
-
-        for (int i = 1; i <= nbBuzzer; i++) {
-            int reactivity = 1 + random.nextInt(10); // entre 1 et 10 ms
-            Buzzer buzzer = new Buzzer(i, reactivity);
-            buzzers.add(buzzer);
-            String jsonMessage = "{\"id\":" + i + "}";
-            mqtt.publishMessage(topic, jsonMessage);
-        }
-
-    }
-
-    public static void enableBuzzAndSendMessages(ClientMQTT mqtt) throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(buzzers.size());
-        Random random = new Random();
-
-        for (Buzzer buzzer : buzzers) {
-            buzzer.setCanBuzz(true);
-
-            new Thread(() -> {
-                try {
-//                    Thread.sleep(buzzer.getReactivity());
-                    int reactivity = 1 + random.nextInt(10);
-                    Thread.sleep(reactivity);
-                    if (buzzer.canBuzz()) {
-                        String topic = "play/buzz";
-                        String jsonMessage = "{\"buzzer\":" + buzzer.getId() + ", \"reactivity\":" + reactivity + "}";
-                        mqtt.publishMessage(topic, jsonMessage);
-                        safePrintln("Buzzer " + buzzer.getId() + " envoye apres " + reactivity + " ms");
-                        buzzOrder.add(new Buzzer(buzzer.getId(), reactivity));
-                        buzzer.setCanBuzz(false);
-                    }
-                } catch (MqttException | InterruptedException e) {
-                    e.printStackTrace();
-                } finally {
-                    latch.countDown();
-                }
-            }).start();
-        }
-
-        latch.await(); // Attend que tous les buzzers aient publié avant de continuer
-    }
-
-    public static void test() {
-        new Thread(() -> {
-            while (true) {
-                safePrintln("Commande :");
-                safePrint("> ");
-                String input = scanner.nextLine();
-
-                switch (input.toLowerCase()) {
-                    case "liste":
-                        safePrintln("Buzzers ayant buzze :");
-                        synchronized (buzzOrder) {
-                            if (buzzOrder.isEmpty()) {
-                                safePrintln("Aucun buzzer n'a buzze pour l'instant.");
-                            } else {
-                                for (int i = 0; i < buzzOrder.size(); i++) {
-                                    Buzzer b = buzzOrder.get(i);
-                                    safePrintln((i + 1) + ". Buzzer " + b.getId() + " (" + b.getReactivity() + " ms)");
-                                }
-                            }
-                        }
-                        break;
-
-                    case "exit":
-                        safePrintln("Fin du programme (via console).");
-                        System.exit(0);
-                        break;
-
-                    default:
-                        safePrintln("Commande inconnue. Utilisez 'liste' ou 'exit'.");
-                }
-            }
-        }).start();
-
-    }
-
-    public static void safePrintln(String message) {
-        consoleLock.lock();
-        try {
-            System.out.println(message);
-        } finally {
-            consoleLock.unlock();
-        }
-    }
-
-    public static void safePrint(String message) {
-        consoleLock.lock();
-        try {
-            System.out.print(message);
-        } finally {
-            consoleLock.unlock();
-        }
-    }
-
     public static void main(String[] args) {
-        ClientMQTT mqtt = new ClientMQTT();
+        ConsolePrinter printer = ConsolePrinter.getInstance();
+        Scanner scanner = new Scanner(System.in);
+
+        MqttClientManager mqttManager = new MqttClientManager();
+        BuzzerManager buzzerManager = new BuzzerManager();
+
+        CountDownLatch startLatch = new CountDownLatch(1);
+        AtomicReference<CountDownLatch> buzzStartLatchRef = new AtomicReference<>(new CountDownLatch(1));
+        AtomicBoolean stopGame = new AtomicBoolean(false);
 
         try {
-            mqtt.connectToBroker();
+            mqttManager.connect();
 
-            mqtt.setCallback(new MqttCallback() {
-                @Override
-                public void connectionLost(Throwable cause) { }
+            // Configurer l'écouteur MQTT (Observer pattern)
+            mqttManager.setCallback(new GameEventListener(startLatch, buzzStartLatchRef, () -> stopGame.set(true)));
 
-                @Override
-                public void messageArrived(String topic, MqttMessage message) {
-                    String payload = new String(message.getPayload());
-                    JSONObject json = new JSONObject(payload);
-                    String msg = json.getString("message");
+            mqttManager.subscribe("play/game");
+            mqttManager.subscribe("play/canBuzz");
 
-                    if (topic.equals("play/game")) {
-                        if (msg.equalsIgnoreCase("game start")) {
-                            startLatch.countDown();
-                        } else if (msg.equalsIgnoreCase("game stop")) {
-                            stopGame = true;
-                            buzzStartLatch.countDown();
-                        }
-                    } else if (topic.equals("play/canBuzz")) {
-                        if (msg.equalsIgnoreCase("buzz start")) {
-                            buzzStartLatch.countDown();
-                        }
-                    }
-                }
+            // === Initialisation des buzzers via la factory ===
+            printer.println("Tape un nombre de buzzers :");
+            printer.print("> ");
+            int nbBuzzers = Integer.parseInt(scanner.nextLine());
 
-                @Override
-                public void deliveryComplete(IMqttDeliveryToken token) { }
-            });
+            for (int i = 1; i <= nbBuzzers; i++) {
+                Buzzer buzzer = BuzzerFactory.createBuzzer(i);
+                buzzerManager.addBuzzer(buzzer);
 
-            initBuzzers(mqtt);
-
-            mqtt.subscribeToTopic("play/game");
-            mqtt.subscribeToTopic("play/canBuzz");
-
-            safePrintln("En attente du message 'game start' ...");
-            startLatch.await();
-
-            safePrintln("La partie commence !");
-            test();
-
-            while (!stopGame) {
-                buzzStartLatch = new CountDownLatch(1);
-
-                buzzStartLatch.await();
-
-                safePrintln("\nLes buzzers peuvent buzzer !");
-                buzzOrder.clear();
-                enableBuzzAndSendMessages(mqtt);
-
-                safePrintln("Les buzzers ne peuvent plus buzzer !");
-                safePrintln("Commande :");
-                safePrint("> ");
+                String msg = "{\"id\":" + buzzer.getId() + "}";
+                mqttManager.publish("init/buzzers", msg);
             }
 
-            safePrintln("La partie est terminée.");
 
-            mqtt.disconnect();
+//            printer.println("En attente du message 'game start' ...");
+            printer.println("La partie n'a pas encore commence...");
+            startLatch.await();
+            printer.println("La partie commence !");
+
+            // Démarre la console dans un thread séparé
+            new Thread(new CommandHandler(buzzerManager)).start();
+
+            while (!stopGame.get()) {
+                buzzStartLatchRef.set(new CountDownLatch(1));
+//                printer.println("\nEn attente du signal 'buzz start'...");
+                printer.println("\nEn attente de la prochaine question...");
+                buzzStartLatchRef.get().await();
+
+                buzzerManager.clearBuzzOrder();
+                printer.println("Les buzzers peuvent buzzer !");
+
+                BuzzerExecutor buzzExecutor = new BuzzerExecutor(buzzerManager, mqttManager);
+                buzzExecutor.runBuzzSequence();
+
+                printer.println("Fin de sequence de buzz.");
+                printer.println("Commande :");
+                printer.print("> ");
+            }
+
+            printer.println("La partie est terminee.");
+            mqttManager.disconnect();
 
         } catch (Exception e) {
+            printer.println("Erreur : " + e.getMessage());
             e.printStackTrace();
         }
     }
-
 }

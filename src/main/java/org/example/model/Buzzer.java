@@ -1,4 +1,4 @@
-package org.example;
+package org.example.model;
 
 public class Buzzer {
     private int id;
@@ -16,6 +16,8 @@ public class Buzzer {
 
     public boolean canBuzz() { return canBuzz; }
     public void setCanBuzz(boolean canBuzz) { this.canBuzz = canBuzz; }
+
+    public void setReactivity(int reactivity) { this.reactivity = reactivity; }
 
     @Override
     public String toString() {
