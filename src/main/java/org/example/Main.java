@@ -8,6 +8,7 @@ import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.locks.ReentrantLock;
+import org.json.JSONObject;
 
 public class Main {
     private static final List<Buzzer> buzzers = new ArrayList<>();
@@ -21,7 +22,7 @@ public class Main {
     private static Scanner scanner = new Scanner(System.in);
 
     public static void initBuzzers(ClientMQTT mqtt) throws MqttException {
-        String topic = "BUZZERS";
+        String topic = "init/buzzers";
         Random random = new Random();
 
         safePrintln("Tape un nombre de buzzer :");
@@ -56,6 +57,7 @@ public class Main {
                         mqtt.publishMessage(topic, jsonMessage);
                         safePrintln("Buzzer " + buzzer.getId() + " envoye apres " + reactivity + " ms");
                         buzzOrder.add(new Buzzer(buzzer.getId(), reactivity));
+                        buzzer.setCanBuzz(false);
                     }
                 } catch (MqttException | InterruptedException e) {
                     e.printStackTrace();
@@ -134,16 +136,18 @@ public class Main {
                 @Override
                 public void messageArrived(String topic, MqttMessage message) {
                     String payload = new String(message.getPayload());
+                    JSONObject json = new JSONObject(payload);
+                    String msg = json.getString("message");
 
                     if (topic.equals("play/game")) {
-                        if (payload.equalsIgnoreCase("game start")) {
+                        if (msg.equalsIgnoreCase("game start")) {
                             startLatch.countDown();
-                        } else if (payload.equalsIgnoreCase("game stop")) {
+                        } else if (msg.equalsIgnoreCase("game stop")) {
                             stopGame = true;
                             buzzStartLatch.countDown();
                         }
                     } else if (topic.equals("play/canBuzz")) {
-                        if (payload.equalsIgnoreCase("buzz start")) {
+                        if (msg.equalsIgnoreCase("buzz start")) {
                             buzzStartLatch.countDown();
                         }
                     }
@@ -174,6 +178,8 @@ public class Main {
                 enableBuzzAndSendMessages(mqtt);
 
                 safePrintln("Les buzzers ne peuvent plus buzzer !");
+                safePrintln("Commande :");
+                safePrint("> ");
             }
 
             safePrintln("La partie est terminée.");
