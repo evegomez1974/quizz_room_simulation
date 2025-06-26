@@ -3,10 +3,10 @@ package org.example.mqtt;
 import org.eclipse.paho.client.mqttv3.*;
 
 public class MqttClientManager {
-    private static final String BROKER_URL = "";
-    private static final String CLIENT_ID = "";
-    private static final String USERNAME = "";
-    private static final String PASSWORD = "";
+    private static final String BROKER_URL = "ssl://70d3d122435c4c66875841a4ee5e6c0b.s1.eu.hivemq.cloud:8883";
+    private static final String CLIENT_ID = "JavaClientTest";
+    private static final String USERNAME = "user_quizz_room";
+    private static final String PASSWORD = "Quizz_room/buzzer25";
 
     private MqttClient client;
 

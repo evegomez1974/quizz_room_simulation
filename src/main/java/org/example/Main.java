@@ -5,6 +5,8 @@ import org.example.mqtt.GameEventListener;
 import org.example.mqtt.MqttClientManager;
 import org.example.model.Buzzer;
 import org.example.util.ConsolePrinter;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
@@ -37,16 +39,23 @@ public class Main {
             printer.print("> ");
             int nbBuzzers = Integer.parseInt(scanner.nextLine());
 
+            JSONArray buzzerArray = new JSONArray();
+
             for (int i = 1; i <= nbBuzzers; i++) {
                 Buzzer buzzer = BuzzerFactory.createBuzzer(i);
                 buzzerManager.addBuzzer(buzzer);
 
-                String msg = "{\"id\":" + buzzer.getId() + "}";
-                mqttManager.publish("init/buzzers", msg);
+                JSONObject buzzerJson = new JSONObject();
+                buzzerJson.put("id", buzzer.getId());
+                buzzerArray.put(buzzerJson);
             }
 
+            JSONObject fullMessage = new JSONObject();
+            fullMessage.put("buzzers", buzzerArray);
 
-//            printer.println("En attente du message 'game start' ...");
+            mqttManager.publish("init/buzzers", fullMessage.toString());
+
+
             printer.println("La partie n'a pas encore commence...");
             startLatch.await();
             printer.println("La partie commence !");
@@ -56,7 +65,6 @@ public class Main {
 
             while (!stopGame.get()) {
                 buzzStartLatchRef.set(new CountDownLatch(1));
-//                printer.println("\nEn attente du signal 'buzz start'...");
                 printer.println("\nEn attente de la prochaine question...");
                 buzzStartLatchRef.get().await();
 
@@ -73,6 +81,7 @@ public class Main {
 
             printer.println("La partie est terminee.");
             mqttManager.disconnect();
+            System.exit(0);
 
         } catch (Exception e) {
             printer.println("Erreur : " + e.getMessage());

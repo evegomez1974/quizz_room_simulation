@@ -36,7 +36,6 @@ public class GameEventListener implements MqttCallback {
             }
         } else if (topic.equals("play/canBuzz")) {
             if (msg.equalsIgnoreCase("buzz start")) {
-                System.out.println("\n signal 'buzz start'...");
                 buzzStartLatchRef.get().countDown();
             }
         }

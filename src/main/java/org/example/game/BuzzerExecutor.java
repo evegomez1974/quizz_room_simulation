@@ -4,6 +4,7 @@ import org.example.model.Buzzer;
 import org.example.mqtt.MqttClientManager;
 import org.example.util.ConsolePrinter;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
@@ -23,21 +24,37 @@ public class BuzzerExecutor {
         CountDownLatch latch = new CountDownLatch(buzzers.size());
         Random random = new Random();
 
+        List<Buzzer> willBuzz = new ArrayList<>();
+
+        // Décider aléatoirement qui buzz (au moins 1)
         for (Buzzer buzzer : buzzers) {
-            buzzer.setCanBuzz(true); // reset état
+            boolean shouldBuzz = random.nextBoolean(); // 50% de chances
+            if (shouldBuzz) {
+                willBuzz.add(buzzer);
+            }
+        }
+
+        // S’assurer qu’au moins un buzzer buzz
+        if (willBuzz.isEmpty()) {
+            Buzzer randomBuzzer = buzzers.get(random.nextInt(buzzers.size()));
+            willBuzz.add(randomBuzzer);
+        }
+
+        for (Buzzer buzzer : buzzers) {
+            buzzer.setCanBuzz(true);
             new Thread(() -> {
                 try {
                     int reactivity = 1 + random.nextInt(10); // délai aléatoire
                     Thread.sleep(reactivity);
 
-                    if (buzzer.canBuzz()) {
+                    if (willBuzz.contains(buzzer)) {
                         String topic = "play/buzz";
                         String payload = "{\"buzzer\":" + buzzer.getId() + ", \"reactivity\":" + reactivity + "}";
                         mqttManager.publish(topic, payload);
 
                         printer.println("Buzzer " + buzzer.getId() + " a buzze apres " + reactivity + " ms");
 
-                        buzzer.setReactivity(reactivity); // mise à jour du vrai temps
+                        buzzer.setReactivity(reactivity);
                         buzzer.setCanBuzz(false);
 
                         buzzerManager.addToBuzzOrder(new Buzzer(buzzer.getId(), reactivity));
@@ -45,11 +62,11 @@ public class BuzzerExecutor {
                 } catch (Exception e) {
                     printer.println("Erreur dans le thread buzzer : " + e.getMessage());
                 } finally {
-                    latch.countDown(); // termine ce thread
+                    latch.countDown();
                 }
             }).start();
         }
 
-        latch.await(); // on attend que tous les threads terminent
+        latch.await();
     }
 }
