@@ -74,7 +74,7 @@ public class CommandHandler implements Runnable {
                     break;
 
                 default:
-                    printer.println("Commande inconnue. Utilisez 'list', 'first' ou 'exit'.");
+                    printer.println("Commande inconnue. Utilisez 'list', 'first', 'active' ou 'exit'.");
             }
         }
     }
